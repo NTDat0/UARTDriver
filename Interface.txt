@@ -1,0 +1,113 @@
+import serial
+import time
+import tkinter as tk
+from tkinter import scrolledtext, messagebox, simpledialog
+import threading
+
+# Initialize UART connection
+def init_serial():
+    try:
+        ser = serial.Serial(
+            port='/dev/ttyUSB0',  # Make sure to use the correct port name
+            baudrate=9600,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            bytesize=serial.EIGHTBITS,
+            timeout=1  # 1 second timeout for non-blocking read
+        )
+        return ser
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to connect: {e}")
+        return None
+
+def close_connection():
+    if ser and ser.is_open:
+        ser.close()
+    root.quit()
+
+def send_message():
+    message = message_entry.get()
+    if not message:
+        return
+    message += '\n'  # Adding newline to match the expected protocol
+
+    try:
+        # Check if UART is open
+        if not ser.is_open:
+            messagebox.showerror("Error", "Serial connection is closed.")
+            return
+
+        # Send message to Raspberry Pi (or other device)
+        ser.write(message.encode())
+        ser.flush()
+
+        # Display the message sent
+        console_text.insert(tk.END, f"Sent to device: {message.strip()}\n")
+        console_text.yview(tk.END)  # Auto-scroll to the bottom
+
+        # Clear the message input
+        message_entry.delete(0, tk.END)
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to send message: {e}")
+
+def listen_for_responses():
+    """ Listen for responses from the device in a separate thread """
+    while True:
+        if ser and ser.is_open:
+            try:
+                # Read data from the serial port
+                response = ser.readline().decode('utf-8').strip()  # Reading line by line
+                if response:
+                    console_text.insert(tk.END, f"Device says: {response}\n")
+                    console_text.yview(tk.END)  # Auto-scroll to the bottom
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to read data: {e}")
+        time.sleep(0.1)  # Sleep for a short time to avoid blocking
+
+# Initialize Tkinter window
+root = tk.Tk()
+root.title("UART Communication")
+root.geometry("500x400")
+
+# Set the background color to white
+root.configure(bg="#FFFFFF")
+
+# Message input frame
+message_frame = tk.Frame(root, bg="#FFFFFF")  # White background
+message_frame.pack(pady=10)
+
+message_label = tk.Label(message_frame, text="Message:", font=("Arial", 12), bg="#FFFFFF", fg="black")
+message_label.grid(row=0, column=0, padx=5)
+message_entry = tk.Entry(message_frame, width=40, font=("Arial", 12))
+message_entry.grid(row=0, column=1, padx=5)
+
+# Button to send message
+send_button = tk.Button(root, text="Send", command=send_message, bg="#003366", fg="white",  # Dark blue color
+                        font=("Arial", 12), padx=10, pady=5)
+send_button.pack(pady=5)
+
+# Console display frame
+console_frame = tk.Frame(root, bg="#FFFFFF")  # White background
+console_frame.pack(pady=10)
+
+console_text = scrolledtext.ScrolledText(console_frame, width=55, height=10, font=("Arial", 10), wrap=tk.WORD, bg="#FFFFFF", fg="black")
+console_text.grid(row=0, column=0)
+console_text.config(state="normal")  # Allow editing
+
+# Initialize serial connection
+ser = init_serial()  # Assign 'ser' globally
+
+if ser:
+    # Start the listener in a separate thread to receive data from the device
+    listener_thread = threading.Thread(target=listen_for_responses, daemon=True)
+    listener_thread.start()
+
+# Close connection button
+close_button = tk.Button(root, text="Close", command=close_connection, bg="#003366", fg="white",  # Dark blue color
+                         font=("Arial", 12), padx=10, pady=5)
+close_button.pack(pady=5)
+
+# Run the Tkinter main loop
+root.protocol("WM_DELETE_WINDOW", close_connection)
+root.mainloop()
